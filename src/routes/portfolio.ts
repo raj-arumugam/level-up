@@ -1,94 +1,16 @@
 import express, { Request, Response } from 'express';
-import { body, param } from 'express-validator';
 import { authenticateToken } from '../middleware/auth';
-import { handleValidationErrors } from '../middleware/validation';
+import { 
+  validateCreatePosition, 
+  validateUpdatePosition, 
+  validatePositionId 
+} from '../middleware/validation';
 import { portfolioService } from '../services/portfolioService';
 import { ApiResponse } from '../types';
 
 const router = express.Router();
 
-/**
- * Validation rules for creating a stock position
- */
-const validateCreatePosition = [
-  body('symbol')
-    .trim()
-    .isLength({ min: 1, max: 10 })
-    .withMessage('Stock symbol must be between 1 and 10 characters')
-    .matches(/^[A-Za-z0-9.-]+$/)
-    .withMessage('Stock symbol can only contain letters, numbers, dots, and hyphens'),
-  
-  body('quantity')
-    .isFloat({ min: 0.001, max: 1000000 })
-    .withMessage('Quantity must be a positive number between 0.001 and 1,000,000'),
-  
-  body('purchasePrice')
-    .isFloat({ min: 0.01, max: 100000 })
-    .withMessage('Purchase price must be between $0.01 and $100,000'),
-  
-  body('purchaseDate')
-    .isISO8601()
-    .withMessage('Purchase date must be a valid date')
-    .custom((value) => {
-      const date = new Date(value);
-      const now = new Date();
-      if (date > now) {
-        throw new Error('Purchase date cannot be in the future');
-      }
-      return true;
-    }),
-  
-  handleValidationErrors
-];
-
-/**
- * Validation rules for updating a stock position
- */
-const validateUpdatePosition = [
-  param('id')
-    .isString()
-    .isLength({ min: 1 })
-    .withMessage('Position ID is required'),
-  
-  body('quantity')
-    .optional()
-    .isFloat({ min: 0.001, max: 1000000 })
-    .withMessage('Quantity must be a positive number between 0.001 and 1,000,000'),
-  
-  body('purchasePrice')
-    .optional()
-    .isFloat({ min: 0.01, max: 100000 })
-    .withMessage('Purchase price must be between $0.01 and $100,000'),
-  
-  body('purchaseDate')
-    .optional()
-    .isISO8601()
-    .withMessage('Purchase date must be a valid date')
-    .custom((value) => {
-      if (value) {
-        const date = new Date(value);
-        const now = new Date();
-        if (date > now) {
-          throw new Error('Purchase date cannot be in the future');
-        }
-      }
-      return true;
-    }),
-  
-  handleValidationErrors
-];
-
-/**
- * Validation rules for position ID parameter
- */
-const validatePositionId = [
-  param('id')
-    .isString()
-    .isLength({ min: 1 })
-    .withMessage('Position ID is required'),
-  
-  handleValidationErrors
-];
+// Validation rules are now imported from middleware/validation.ts
 
 /**
  * POST /api/positions

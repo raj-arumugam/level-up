@@ -1,44 +1,13 @@
 import express, { Request, Response } from 'express';
-import { query } from 'express-validator';
 import { authenticateToken } from '../middleware/auth';
-import { handleValidationErrors } from '../middleware/validation';
+import { validateAnalyticsQuery } from '../middleware/validation';
 import { portfolioService } from '../services/portfolioService';
 import { analyticsService } from '../services/analyticsService';
 import { ApiResponse } from '../types';
 
 const router = express.Router();
 
-/**
- * Validation rules for time range query parameter
- */
-const validateTimeRange = [
-  query('period')
-    .optional()
-    .isIn(['1d', '1w', '1m', '3m', '6m', '1y', 'all'])
-    .withMessage('Period must be one of: 1d, 1w, 1m, 3m, 6m, 1y, all'),
-  
-  query('startDate')
-    .optional()
-    .isISO8601()
-    .withMessage('Start date must be a valid ISO 8601 date'),
-  
-  query('endDate')
-    .optional()
-    .isISO8601()
-    .withMessage('End date must be a valid ISO 8601 date')
-    .custom((value, { req }) => {
-      if (value && req.query && req.query.startDate) {
-        const startDate = new Date(req.query.startDate as string);
-        const endDate = new Date(value);
-        if (endDate <= startDate) {
-          throw new Error('End date must be after start date');
-        }
-      }
-      return true;
-    }),
-  
-  handleValidationErrors
-];
+// Validation rules are now imported from middleware/validation.ts
 
 /**
  * GET /api/analytics/sectors
@@ -112,7 +81,7 @@ router.get('/performance', authenticateToken, async (req: Request, res: Response
  * GET /api/analytics/historical
  * Get historical portfolio performance data
  */
-router.get('/historical', authenticateToken, validateTimeRange, async (req: Request, res: Response) => {
+router.get('/historical', authenticateToken, validateAnalyticsQuery, async (req: Request, res: Response) => {
   try {
     const userId = req.user.id;
     const { period = '1m', startDate, endDate } = req.query;
@@ -187,7 +156,7 @@ router.get('/historical', authenticateToken, validateTimeRange, async (req: Requ
  * GET /api/analytics/benchmark
  * Compare portfolio performance with market benchmarks
  */
-router.get('/benchmark', authenticateToken, validateTimeRange, async (req: Request, res: Response) => {
+router.get('/benchmark', authenticateToken, validateAnalyticsQuery, async (req: Request, res: Response) => {
   try {
     const userId = req.user.id;
     const { benchmark = 'SPY', period = '1m' } = req.query;

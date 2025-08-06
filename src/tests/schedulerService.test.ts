@@ -1,6 +1,7 @@
 import { SchedulerService } from '../services/schedulerService';
 import { prisma } from '../lib/database';
 import { notificationService } from '../services/notificationService';
+import { logger } from '../lib/logger';
 import cron from 'node-cron';
 
 // Mock dependencies
@@ -28,9 +29,18 @@ jest.mock('node-cron', () => ({
   validate: jest.fn()
 }));
 
+jest.mock('../lib/logger', () => ({
+  logger: {
+    logScheduler: jest.fn(),
+    log: jest.fn(),
+    init: jest.fn()
+  }
+}));
+
 const mockPrisma = prisma as any;
 const mockNotificationService = notificationService as any;
 const mockCron = cron as any;
+const mockLogger = logger as any;
 
 describe('SchedulerService', () => {
   let schedulerService: SchedulerService;
@@ -89,6 +99,10 @@ describe('SchedulerService', () => {
 
     mockCron.validate.mockReturnValue(true);
     mockCron.schedule.mockReturnValue(mockScheduledTask);
+    
+    // Mock logger
+    mockLogger.logScheduler.mockResolvedValue(undefined);
+    mockLogger.log.mockResolvedValue(undefined);
 
     schedulerService = new SchedulerService();
   });

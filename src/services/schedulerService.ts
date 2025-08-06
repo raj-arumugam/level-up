@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { prisma } from '../lib/database';
 import { notificationService } from './notificationService';
+import { logger } from '../lib/logger';
 import { User } from '../types';
 
 export interface SchedulerServiceInterface {
@@ -47,26 +48,37 @@ export class SchedulerService implements SchedulerServiceInterface {
    */
   startDailyUpdateScheduler(): void {
     if (this.dailyUpdateTask) {
-      console.log('Daily update scheduler is already running');
+      logger.logScheduler('warn', 'start', 'Daily update scheduler is already running');
       return;
     }
 
     // Validate cron expression
     if (!cron.validate(this.cronExpression)) {
-      throw new Error(`Invalid cron expression: ${this.cronExpression}`);
+      const error = new Error(`Invalid cron expression: ${this.cronExpression}`);
+      logger.logScheduler('error', 'start', 'Failed to start scheduler: invalid cron expression', {
+        data: { cronExpression: this.cronExpression }
+      });
+      throw error;
     }
 
-    console.log(`Starting daily update scheduler with cron expression: ${this.cronExpression}`);
+    logger.logScheduler('info', 'start', `Starting daily update scheduler with cron expression: ${this.cronExpression}`, {
+      data: {
+        cronExpression: this.cronExpression,
+        timezone: process.env.SCHEDULER_TIMEZONE || 'America/New_York',
+        retryAttempts: this.retryAttempts,
+        batchSize: this.batchSize
+      }
+    });
 
     this.dailyUpdateTask = cron.schedule(
       this.cronExpression,
       async () => {
         if (this.isRunning) {
-          console.log('Daily update process is already running, skipping this execution');
+          logger.logScheduler('warn', 'start', 'Daily update process is already running, skipping this execution');
           return;
         }
 
-        console.log('Starting scheduled daily update process');
+        logger.logScheduler('info', 'start', 'Starting scheduled daily update process');
         await this.processDailyUpdatesForAllUsers();
       },
       {
@@ -75,7 +87,7 @@ export class SchedulerService implements SchedulerServiceInterface {
       }
     );
 
-    console.log('Daily update scheduler started successfully');
+    logger.logScheduler('info', 'start', 'Daily update scheduler started successfully');
   }
 
   /**
@@ -85,9 +97,9 @@ export class SchedulerService implements SchedulerServiceInterface {
     if (this.dailyUpdateTask) {
       this.dailyUpdateTask.stop();
       this.dailyUpdateTask = null;
-      console.log('Daily update scheduler stopped');
+      logger.logScheduler('info', 'stop', 'Daily update scheduler stopped');
     } else {
-      console.log('Daily update scheduler is not running');
+      logger.logScheduler('warn', 'stop', 'Daily update scheduler is not running');
     }
   }
 
@@ -118,30 +130,42 @@ export class SchedulerService implements SchedulerServiceInterface {
     };
 
     try {
-      console.log('Starting daily update process for all users');
+      logger.logScheduler('info', 'batch_start', 'Starting daily update process for all users');
 
       // Get all users with notification settings enabled
       const users = await this.getEligibleUsers();
       stats.totalUsers = users.length;
 
-      console.log(`Found ${users.length} eligible users for daily updates`);
+      logger.logScheduler('info', 'batch_start', `Found ${users.length} eligible users for daily updates`, {
+        stats: { totalUsers: users.length }
+      });
 
       if (users.length === 0) {
-        console.log('No eligible users found for daily updates');
+        logger.logScheduler('info', 'batch_complete', 'No eligible users found for daily updates');
         return;
       }
 
       // Process users in batches to avoid overwhelming the system
       for (let i = 0; i < users.length; i += this.batchSize) {
         const batch = users.slice(i, i + this.batchSize);
-        console.log(`Processing batch ${Math.floor(i / this.batchSize) + 1}/${Math.ceil(users.length / this.batchSize)} (${batch.length} users)`);
+        const batchNumber = Math.floor(i / this.batchSize) + 1;
+        const totalBatches = Math.ceil(users.length / this.batchSize);
+        const batchId = `batch-${batchNumber}-${Date.now()}`;
+
+        logger.logScheduler('info', 'batch_start', `Processing batch ${batchNumber}/${totalBatches} (${batch.length} users)`, {
+          batchId,
+          data: { batchNumber, totalBatches, batchSize: batch.length }
+        });
 
         // Process batch concurrently
         const batchPromises = batch.map(async (user) => {
           try {
             await this.processDailyUpdateForUser(user.id);
             stats.successfulUpdates++;
-            console.log(`✓ Daily update completed for user ${user.id} (${user.email})`);
+            logger.logScheduler('info', 'user_success', `Daily update completed for user ${user.id} (${user.email})`, {
+              batchId,
+              userId: user.id
+            });
           } catch (error: any) {
             stats.failedUpdates++;
             const errorInfo = {
@@ -150,15 +174,27 @@ export class SchedulerService implements SchedulerServiceInterface {
               timestamp: new Date()
             };
             stats.errors.push(errorInfo);
-            console.error(`✗ Daily update failed for user ${user.id} (${user.email}):`, error.message);
+            logger.logScheduler('error', 'user_failure', `Daily update failed for user ${user.id} (${user.email}): ${error.message}`, {
+              batchId,
+              userId: user.id,
+              data: { error: error.message }
+            });
           }
         });
 
         await Promise.all(batchPromises);
 
+        logger.logScheduler('info', 'batch_complete', `Batch ${batchNumber}/${totalBatches} completed`, {
+          batchId,
+          stats: {
+            successful: stats.successfulUpdates,
+            failed: stats.failedUpdates
+          }
+        });
+
         // Add delay between batches to prevent rate limiting
         if (i + this.batchSize < users.length) {
-          console.log(`Waiting ${this.batchDelay}ms before processing next batch...`);
+          logger.logScheduler('debug', 'batch_start', `Waiting ${this.batchDelay}ms before processing next batch...`);
           await this.delay(this.batchDelay);
         }
       }
@@ -167,20 +203,24 @@ export class SchedulerService implements SchedulerServiceInterface {
       stats.duration = stats.endTime.getTime() - stats.startTime.getTime();
 
       // Log final statistics
-      console.log('Daily update process completed:', {
-        totalUsers: stats.totalUsers,
-        successful: stats.successfulUpdates,
-        failed: stats.failedUpdates,
-        skipped: stats.skippedUpdates,
-        duration: `${Math.round(stats.duration / 1000)}s`,
-        errorRate: `${((stats.failedUpdates / stats.totalUsers) * 100).toFixed(1)}%`
+      logger.logScheduler('info', 'complete', 'Daily update process completed', {
+        duration: stats.duration,
+        stats: {
+          totalUsers: stats.totalUsers,
+          successful: stats.successfulUpdates,
+          failed: stats.failedUpdates,
+          skipped: stats.skippedUpdates
+        },
+        data: {
+          durationSeconds: Math.round(stats.duration / 1000),
+          errorRate: `${((stats.failedUpdates / stats.totalUsers) * 100).toFixed(1)}%`
+        }
       });
 
       // Log errors if any
       if (stats.errors.length > 0) {
-        console.error('Errors during daily update process:');
-        stats.errors.forEach(error => {
-          console.error(`- User ${error.userId}: ${error.error}`);
+        logger.logScheduler('error', 'complete', `Daily update process completed with ${stats.errors.length} errors`, {
+          data: { errors: stats.errors }
         });
       }
 
@@ -188,7 +228,9 @@ export class SchedulerService implements SchedulerServiceInterface {
       await this.saveSchedulerStats(stats);
 
     } catch (error: any) {
-      console.error('Critical error in daily update process:', error);
+      logger.logScheduler('error', 'error', `Critical error in daily update process: ${error.message}`, {
+        data: { error: error.message, stack: error.stack }
+      });
       throw error;
     } finally {
       this.isRunning = false;

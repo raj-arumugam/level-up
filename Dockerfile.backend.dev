@@ -1,0 +1,36 @@
+FROM node:18-slim
+
+# Install OpenSSL and other dependencies for Prisma and bcrypt
+RUN apt-get update && apt-get install -y \
+    openssl \
+    ca-certificates \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Copy source code first
+COPY . .
+
+# Install dependencies
+RUN npm ci
+
+# Rebuild bcrypt for the current platform
+RUN npm rebuild bcrypt --build-from-source
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Create logs directory
+RUN mkdir -p /app/logs
+
+# Expose port
+EXPOSE 3001
+
+# Start the development server
+CMD ["npm", "run", "dev:backend"]

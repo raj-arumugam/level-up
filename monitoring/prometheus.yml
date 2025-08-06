@@ -1,0 +1,41 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  - job_name: 'portfolio-tracker-backend'
+    static_configs:
+      - targets: ['portfolio-tracker-backend-prod:3001']
+    metrics_path: '/api/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'portfolio-tracker-frontend'
+    static_configs:
+      - targets: ['portfolio-tracker-frontend-prod:80']
+    metrics_path: '/health'
+    scrape_interval: 30s
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']

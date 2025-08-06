@@ -22,7 +22,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: Dockerfile.backend.dev
     container_name: portfolio-tracker-backend
     environment:
       NODE_ENV: development
@@ -35,9 +35,7 @@ services:
       EMAIL_PASSWORD: your-email-password
     ports:
       - "3001:3001"
-    volumes:
-      - .:/app
-      - /app/node_modules
+    # Removed volumes to avoid binary compatibility issues
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,12 +44,13 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: portfolio-tracker-frontend
     environment:
       REACT_APP_API_URL: http://localhost:3001/api
     ports:
       - "3000:3000"
+    # No volumes needed for production build
     volumes:
       - ./frontend:/app
       - /app/node_modules
